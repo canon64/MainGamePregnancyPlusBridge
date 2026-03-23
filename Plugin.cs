@@ -90,6 +90,7 @@ namespace MainGamePregnancyPlusBridge
         private bool _dirty = true;
         private float _nextApplyTime;
         private float _nextBindTryTime;
+        private bool _defaultPresetApplied;
 
         private static ConfigurationManager.ConfigurationManagerAttributes UiOrder(int order)
         {
@@ -236,7 +237,6 @@ namespace MainGamePregnancyPlusBridge
                     TryBindBridge("retry");
                 return;
             }
-
             bool forceApplyByBellyBoko = UpdateBellyBokoRuntime();
 
             if (!forceApplyByBellyBoko && !_dirty && Time.unscaledTime < _nextApplyTime)
@@ -342,6 +342,13 @@ namespace MainGamePregnancyPlusBridge
             _bridgeReady = true;
             _dirty = true;
             LogInfo("bind ok reason=" + reason + " assembly=" + _pregnancyAssembly.GetName().Name);
+
+            if (!_defaultPresetApplied)
+            {
+                _defaultPresetApplied = true;
+                _cfgPresetSelectedSlot.Value = 1;
+                LoadPresetToCurrent();
+            }
         }
 
         private Assembly ResolvePregnancyAssembly()

@@ -22,37 +22,21 @@ namespace MainGamePregnancyPlusBridge
         [DataMember(Order = 5)]
         public string MotionStrength = "unknown";
         [DataMember(Order = 6)]
-        public int AnimatorStateHash = 0;
-        [DataMember(Order = 7)]
-        public bool Enabled = true;
-        [DataMember(Order = 8)]
-        public int PresetSlot = 1;
-        [DataMember(Order = 9)]
-        public float ForwardMinPhase = 0.15f;
-        [DataMember(Order = 10)]
-        public float MinHoldWidth = 0f;
-        [DataMember(Order = 11)]
-        public float MaxPhase = 0.35f;
-        [DataMember(Order = 12)]
-        public float ReturnMinPhase = 0.55f;
-        [DataMember(Order = 13)]
-        public float MinInflationSize = 0f;
-        [DataMember(Order = 14)]
-        public float MaxInflationSize = 1f;
-        [DataMember(Order = 15)]
-        public string EaseUp = "easeOut";
-        [DataMember(Order = 16)]
-        public string EaseDown = "easeIn";
-        [DataMember(Order = 17)]
-        public bool DistanceMode = false;
-        [DataMember(Order = 18)]
-        public float DistanceCutPercent = 0.5f;
-        [DataMember(Order = 19)]
         public float DistanceMinMeters = 0.04f;
-        [DataMember(Order = 20)]
+        [DataMember(Order = 7)]
         public float DistanceMaxMeters = 0.24f;
-        [DataMember(Order = 21)]
-        public float DistanceSmoothing = 0.35f;
+        [DataMember(Order = 8)]
+        public float DistanceCutPercent = 0.9f;
+        [DataMember(Order = 9)]
+        public float DistanceSmoothing = 0.8f;
+        [DataMember(Order = 10)]
+        public string EaseUp = "easeOut";
+        [DataMember(Order = 11)]
+        public string EaseDown = "easeIn";
+        [DataMember(Order = 12)]
+        public float MinInflationSize = 0f;
+        [DataMember(Order = 13)]
+        public float MaxInflationSize = 5f;
     }
 
     [DataContract]
@@ -92,27 +76,21 @@ namespace MainGamePregnancyPlusBridge
             return true;
         }
 
-        public bool HasAnyForPostureStrength(int postureId, int postureMode, string motionStrength)
+        // postureId|postureMode|postureName|motionStrength|... のプレフィックス一致で検索
+        public bool TryGetByMotionStrength(int postureId, int postureMode, string postureName, string motionStrength, out BellyBokoProfile profile)
         {
+            profile = null;
             if (_collection?.Profiles == null)
                 return false;
 
-            string strength = motionStrength ?? string.Empty;
-            for (int i = 0; i < _collection.Profiles.Count; i++)
-            {
-                BellyBokoProfile p = _collection.Profiles[i];
-                if (p == null)
-                    continue;
-                if (p.PostureId != postureId)
-                    continue;
-                if (p.PostureMode != postureMode)
-                    continue;
-                if (!string.Equals(p.MotionStrength ?? string.Empty, strength, StringComparison.Ordinal))
-                    continue;
-                return true;
-            }
+            string prefix = postureId + "|" + postureMode + "|" + (postureName ?? string.Empty) + "|" + (motionStrength ?? string.Empty) + "|";
+            BellyBokoProfile found = _collection.Profiles.FirstOrDefault(x =>
+                x != null && (x.AnimationKey ?? string.Empty).StartsWith(prefix, StringComparison.Ordinal));
+            if (found == null)
+                return false;
 
-            return false;
+            profile = Clone(found);
+            return true;
         }
 
         public void Upsert(BellyBokoProfile profile)
@@ -141,36 +119,17 @@ namespace MainGamePregnancyPlusBridge
             try
             {
                 EnsureCollection();
-                int countBefore = _collection.Profiles != null ? _collection.Profiles.Count : 0;
                 string dir = Path.GetDirectoryName(_path);
                 if (!string.IsNullOrEmpty(dir) && !Directory.Exists(dir))
                     Directory.CreateDirectory(dir);
 
                 string json = Serialize(_collection);
-                string jsonHead = json == null ? "null" : (json.Length > 80 ? json.Substring(0, 80) : json);
-                _logInfo?.Invoke("belly save diag: countBefore=" + countBefore + " jsonLen=" + (json == null ? -1 : json.Length) + " jsonHead=" + (jsonHead ?? string.Empty));
                 File.WriteAllText(_path, json, new UTF8Encoding(false));
-
-                long fileSize = -1;
-                try { fileSize = new FileInfo(_path).Length; } catch { }
-
-                int countReload = -1;
-                try
-                {
-                    string re = File.ReadAllText(_path, Encoding.UTF8);
-                    BellyBokoProfileCollection loaded = Deserialize(re);
-                    countReload = loaded?.Profiles != null ? loaded.Profiles.Count : 0;
-                }
-                catch
-                {
-                    countReload = -2;
-                }
-
-                _logInfo?.Invoke("belly save diag: fileSize=" + fileSize + " reloadCount=" + countReload + " path=" + _path);
+                _logInfo?.Invoke("belly store saved count=" + _collection.Profiles.Count + " path=" + _path);
             }
             catch (Exception ex)
             {
-                _logWarn?.Invoke("belly profile save failed: " + ex.Message);
+                _logWarn?.Invoke("belly store save failed: " + ex.Message);
             }
         }
 
@@ -179,14 +138,7 @@ namespace MainGamePregnancyPlusBridge
             try
             {
                 if (!File.Exists(_path))
-                {
-                    var empty = new BellyBokoProfileCollection();
-                    string dir = Path.GetDirectoryName(_path);
-                    if (!string.IsNullOrEmpty(dir) && !Directory.Exists(dir))
-                        Directory.CreateDirectory(dir);
-                    File.WriteAllText(_path, Serialize(empty), new UTF8Encoding(false));
-                    return empty;
-                }
+                    return new BellyBokoProfileCollection();
 
                 string json = File.ReadAllText(_path, Encoding.UTF8);
                 if (string.IsNullOrWhiteSpace(json))
@@ -200,11 +152,13 @@ namespace MainGamePregnancyPlusBridge
                     .Where(x => x != null && !string.IsNullOrWhiteSpace(x.AnimationKey))
                     .OrderBy(x => x.AnimationKey, StringComparer.Ordinal)
                     .ToList();
+
+                _logInfo?.Invoke("belly store loaded count=" + loaded.Profiles.Count + " path=" + _path);
                 return loaded;
             }
             catch (Exception ex)
             {
-                _logWarn?.Invoke("belly profile load failed: " + ex.Message);
+                _logWarn?.Invoke("belly store load failed: " + ex.Message);
                 return new BellyBokoProfileCollection();
             }
         }
@@ -226,22 +180,14 @@ namespace MainGamePregnancyPlusBridge
                 PostureMode = src.PostureMode,
                 PostureName = src.PostureName,
                 MotionStrength = src.MotionStrength,
-                AnimatorStateHash = src.AnimatorStateHash,
-                Enabled = src.Enabled,
-                PresetSlot = src.PresetSlot,
-                ForwardMinPhase = src.ForwardMinPhase,
-                MinHoldWidth = src.MinHoldWidth,
-                MaxPhase = src.MaxPhase,
-                ReturnMinPhase = src.ReturnMinPhase,
-                MinInflationSize = src.MinInflationSize,
-                MaxInflationSize = src.MaxInflationSize,
-                EaseUp = src.EaseUp,
-                EaseDown = src.EaseDown,
-                DistanceMode = src.DistanceMode,
-                DistanceCutPercent = src.DistanceCutPercent,
                 DistanceMinMeters = src.DistanceMinMeters,
                 DistanceMaxMeters = src.DistanceMaxMeters,
-                DistanceSmoothing = src.DistanceSmoothing
+                DistanceCutPercent = src.DistanceCutPercent,
+                DistanceSmoothing = src.DistanceSmoothing,
+                EaseUp = src.EaseUp,
+                EaseDown = src.EaseDown,
+                MinInflationSize = src.MinInflationSize,
+                MaxInflationSize = src.MaxInflationSize
             };
         }
 

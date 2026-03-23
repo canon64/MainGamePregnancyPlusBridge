@@ -10,6 +10,7 @@ namespace MainGamePregnancyPlusBridge
         private ConfigEntry<string> _cfgPresetName;
         private ConfigEntry<bool> _cfgPresetSaveNow;
         private ConfigEntry<bool> _cfgPresetLoadNow;
+        private ConfigEntry<bool> _cfgPresetResetNow;
 
         private PresetStore _presetStore;
         private bool _presetCommandGuard;
@@ -70,9 +71,24 @@ namespace MainGamePregnancyPlusBridge
                         CustomDrawer = DrawPresetLoadButton
                     }));
 
+            _cfgPresetResetNow = Config.Bind(
+                "20.Preset",
+                "ResetToZeroNow",
+                false,
+                new ConfigDescription(
+                    "全パラメータを0にリセット（ボタン）",
+                    null,
+                    new ConfigurationManager.ConfigurationManagerAttributes
+                    {
+                        Order = 895,
+                        HideDefaultButton = true,
+                        CustomDrawer = DrawPresetResetButton
+                    }));
+
             // Fallback: if someone toggles these from raw config, still execute once.
             _cfgPresetSaveNow.SettingChanged += OnPresetSaveRequested;
             _cfgPresetLoadNow.SettingChanged += OnPresetLoadRequested;
+            _cfgPresetResetNow.SettingChanged += OnPresetResetRequested;
 
             if (_presetStore.TryGet(_cfgPresetSelectedSlot.Value, out PregnancyPlusPreset existing))
             {
@@ -111,6 +127,60 @@ namespace MainGamePregnancyPlusBridge
             }
         }
 
+        private void OnPresetResetRequested(object sender, EventArgs e)
+        {
+            if (_presetCommandGuard || _cfgPresetResetNow == null || !_cfgPresetResetNow.Value)
+                return;
+
+            try
+            {
+                ExecutePresetReset();
+            }
+            finally
+            {
+                ResetPresetTriggerEntry(_cfgPresetResetNow);
+            }
+        }
+
+        private void ExecutePresetReset()
+        {
+            if (_presetCommandGuard)
+                return;
+
+            _presetCommandGuard = true;
+            try
+            {
+                ResetAllToZero();
+            }
+            finally
+            {
+                _presetCommandGuard = false;
+            }
+        }
+
+        private void ResetAllToZero()
+        {
+            _cfgDataGameplayEnabled.Value = true;
+            _cfgDataInflationMoveY.Value = 0f;
+            _cfgDataInflationMoveZ.Value = 0f;
+            _cfgDataInflationStretchX.Value = 0f;
+            _cfgDataInflationStretchY.Value = 0f;
+            _cfgDataInflationShiftY.Value = 0f;
+            _cfgDataInflationShiftZ.Value = 0f;
+            _cfgDataInflationTaperY.Value = 0f;
+            _cfgDataInflationTaperZ.Value = 0f;
+            _cfgDataInflationMultiplier.Value = 0f;
+            _cfgDataInflationClothOffset.Value = 0f;
+            _cfgDataInflationFatFold.Value = 0f;
+            _cfgDataInflationFatFoldHeight.Value = 0f;
+            _cfgDataInflationFatFoldGap.Value = 0f;
+            _cfgDataInflationRoundness.Value = 0f;
+            _cfgDataInflationDrop.Value = 0f;
+            _dirty = true;
+            ShowPresetPopup("全パラメータを0にリセットしました", false);
+            LogInfo("preset reset to zero");
+        }
+
         private void DrawPresetSaveButton(ConfigEntryBase entryBase)
         {
             if (GUILayout.Button("SAVE PRESET", GUILayout.MinWidth(120f)))
@@ -121,6 +191,12 @@ namespace MainGamePregnancyPlusBridge
         {
             if (GUILayout.Button("LOAD PRESET", GUILayout.MinWidth(120f)))
                 ExecutePresetLoad();
+        }
+
+        private void DrawPresetResetButton(ConfigEntryBase entryBase)
+        {
+            if (GUILayout.Button("全パラメータを0にリセット", GUILayout.MinWidth(160f)))
+                ExecutePresetReset();
         }
 
         private void ExecutePresetSave()

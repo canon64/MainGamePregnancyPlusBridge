@@ -13,49 +13,33 @@ namespace MainGamePregnancyPlusBridge
         private const string MotionStrengthUnknown = "unknown";
 
         private ConfigEntry<bool> _cfgBellyEnabled;
-        private ConfigEntry<bool> _cfgBellyCaptureEnabled;
-        private ConfigEntry<KeyboardShortcut> _cfgBellyCaptureMaxKey;
-        private ConfigEntry<KeyboardShortcut> _cfgBellyCaptureMinKey;
         private ConfigEntry<int> _cfgBellyPresetSlot;
         private ConfigEntry<float> _cfgBellyMinInflationSize;
         private ConfigEntry<float> _cfgBellyMaxInflationSize;
-        private ConfigEntry<bool> _cfgBellyAutoReturnMin;
-        private ConfigEntry<float> _cfgBellyForwardMinPhase;
-        private ConfigEntry<float> _cfgBellyMinHoldWidth;
-        private ConfigEntry<float> _cfgBellyMaxPhase;
-        private ConfigEntry<float> _cfgBellyReturnMinPhase;
-        private ConfigEntry<float> _cfgBellyTimelineDisplayOffset;
-        private ConfigEntry<string> _cfgBellyEaseUp;
-        private ConfigEntry<string> _cfgBellyEaseDown;
-        private ConfigEntry<bool> _cfgBellyProfileEnabled;
-        private ConfigEntry<bool> _cfgBellyEditMode;
-        private ConfigEntry<bool> _cfgBellyAutoLoadProfile;
-        private ConfigEntry<bool> _cfgBellyTimelineEditor;
-        private ConfigEntry<bool> _cfgBellySaveProfileNow;
-        private ConfigEntry<bool> _cfgBellyLoadProfileNow;
-        private ConfigEntry<string> _cfgBellyContext;
-        private ConfigEntry<string> _cfgBellyMotionStrength;
-        private ConfigEntry<bool> _cfgBellyDistanceMode;
         private ConfigEntry<float> _cfgBellyDistanceCutPercent;
         private ConfigEntry<float> _cfgBellyDistanceMinMeters;
         private ConfigEntry<float> _cfgBellyDistanceMaxMeters;
         private ConfigEntry<float> _cfgBellyDistanceSmoothing;
         private ConfigEntry<int> _cfgBellyDistanceAnalyzeTurns;
         private ConfigEntry<bool> _cfgBellyDistanceAnalyzeNow;
+        private ConfigEntry<KeyboardShortcut> _cfgBellyDistanceAnalyzeKey;
+        private ConfigEntry<string> _cfgBellyEaseUp;
+        private ConfigEntry<string> _cfgBellyEaseDown;
+        private ConfigEntry<string> _cfgBellyContext;
+        private ConfigEntry<string> _cfgBellyMotionStrength;
 
         private BellyBokoStore _bellyStore;
+        private BellyBokoProfile _bellyFallbackProfile;
+        private FieldInfo _bellyAnimBodyField;
+        private bool _bellyAnimBodyFieldResolved;
 
         private bool _hasRuntimeInflationSizeOverride;
         private float _runtimeInflationSizeOverride;
         private string _bellyCurrentAnimationKey;
-        private bool _bellyEditorSyncGuard;
-        private bool _bellyTriggerGuard;
-        private int _bellyTimelineDragHandle = -1;
-        private bool _bellyTimelineDragDirty;
-        private float _bellyCurrentPhase;
-        private bool _hasBellyCurrentPhase;
         private float _bellyDistanceSmoothed;
         private bool _hasBellyDistanceSmoothed;
+        private float _bellyDistancePrev;
+        private bool _hasBellyDistancePrev;
         private bool _bellyDistanceAnalyzeActive;
         private int _bellyDistanceAnalyzeTargetTurns;
         private int _bellyDistanceAnalyzeCompletedTurns;
@@ -76,15 +60,10 @@ namespace MainGamePregnancyPlusBridge
         private readonly Dictionary<Type, FieldInfo> _bellyLstFemaleFieldCache = new Dictionary<Type, FieldInfo>();
         private readonly Dictionary<Type, MemberInfo> _bellyFlagsMemberCache = new Dictionary<Type, MemberInfo>();
         private readonly Dictionary<Type, MemberInfo> _bellyNowAnimMemberCache = new Dictionary<Type, MemberInfo>();
-        private static readonly string[] BellyEaseOptions = { "linear", "easeIn", "easeOut", "smoothStep", "smootherStep" };
-        private const float BellyTimelineMinGap = 0.01f;
 
         private static ConfigurationManager.ConfigurationManagerAttributes BellyUiOrder(int order)
         {
-            return new ConfigurationManager.ConfigurationManagerAttributes
-            {
-                Order = order
-            };
+            return new ConfigurationManager.ConfigurationManagerAttributes { Order = order };
         }
 
         private static ConfigurationManager.ConfigurationManagerAttributes BellyUiOrderReadOnly(int order)
@@ -106,73 +85,53 @@ namespace MainGamePregnancyPlusBridge
                 "10.BellyBoko",
                 "Enabled",
                 true,
-                new ConfigDescription("Enable automatic belly reaction by animation phase", null, BellyUiOrder(999)));
-            _cfgBellyCaptureEnabled = Config.Bind(
-                "10.BellyBoko",
-                "CaptureEnabled",
-                true,
-                new ConfigDescription("Enable/Disable phase capture keys", null, BellyUiOrder(984)));
-            _cfgBellyCaptureMaxKey = Config.Bind(
-                "10.BellyBoko",
-                "CaptureMaxKey",
-                new KeyboardShortcut(KeyCode.LeftControl),
-                new ConfigDescription("Capture MAX point key (None disables)", null, BellyUiOrder(983)));
-            _cfgBellyCaptureMinKey = Config.Bind(
-                "10.BellyBoko",
-                "CaptureMinKey",
-                new KeyboardShortcut(KeyCode.RightControl),
-                new ConfigDescription("Capture MIN point key (None disables)", null, BellyUiOrder(982)));
+                new ConfigDescription("腹ボコ機能の有効/無効", null, BellyUiOrder(999)));
             _cfgBellyPresetSlot = Config.Bind(
                 "10.BellyBoko",
                 "PresetSlotForMax",
                 1,
-                new ConfigDescription("Preset slot used as max InflationSize source", new AcceptableValueRange<int>(1, 20), BellyUiOrder(985)));
+                new ConfigDescription("最大InflationSizeの取得元プリセットスロット", new AcceptableValueRange<int>(1, 20), BellyUiOrder(985)));
             _cfgBellyMinInflationSize = Config.Bind(
                 "10.BellyBoko",
                 "MinInflationSize",
                 0f,
-                new ConfigDescription("Belly minimum InflationSize (slider + text)", new AcceptableValueRange<float>(0f, 40f), BellyUiOrder(987)));
+                new ConfigDescription("腹ボコ最小InflationSize", new AcceptableValueRange<float>(0f, 40f), BellyUiOrder(984)));
             _cfgBellyMaxInflationSize = Config.Bind(
                 "10.BellyBoko",
                 "MaxInflationSize",
                 5f,
-                new ConfigDescription("Belly maximum InflationSize (slider + text)", new AcceptableValueRange<float>(0f, 40f), BellyUiOrder(986)));
-            _cfgBellyDistanceMode = Config.Bind(
-                "10.BellyBoko",
-                "DistanceMode",
-                false,
-                new ConfigDescription("Distance mode (male/female groin distance based)", null, BellyUiOrder(978)));
+                new ConfigDescription("腹ボコ最大InflationSize", new AcceptableValueRange<float>(0f, 40f), BellyUiOrder(983)));
             _cfgBellyDistanceCutPercent = Config.Bind(
                 "10.BellyBoko",
                 "DistanceCutPercent",
-                0.5f,
-                new ConfigDescription("Distance: ratio where Max->Min drop ends (0..1)", new AcceptableValueRange<float>(0f, 1f), BellyUiOrder(977)));
+                0.9f,
+                new ConfigDescription("最大→最小へ落とし切る距離割合（0..1）", new AcceptableValueRange<float>(0f, 1f), BellyUiOrder(977)));
             _cfgBellyDistanceMinMeters = Config.Bind(
                 "10.BellyBoko",
                 "DistanceMinMeters",
                 0.04f,
-                new ConfigDescription("Distance: min range point (meters)", new AcceptableValueRange<float>(0f, 2f), BellyUiOrder(976)));
+                new ConfigDescription("距離最小点（メートル）", new AcceptableValueRange<float>(0f, 2f), BellyUiOrder(976)));
             _cfgBellyDistanceMaxMeters = Config.Bind(
                 "10.BellyBoko",
                 "DistanceMaxMeters",
                 0.24f,
-                new ConfigDescription("Distance: max range point (meters)", new AcceptableValueRange<float>(0f, 2f), BellyUiOrder(975)));
+                new ConfigDescription("距離最大点（メートル）", new AcceptableValueRange<float>(0f, 2f), BellyUiOrder(975)));
             _cfgBellyDistanceSmoothing = Config.Bind(
                 "10.BellyBoko",
                 "DistanceSmoothing",
-                0.35f,
-                new ConfigDescription("Distance smoothing (0=no smoothing, 1=very smooth)", new AcceptableValueRange<float>(0f, 1f), BellyUiOrder(974)));
+                0.8f,
+                new ConfigDescription("距離平滑化（0=なし、1=最大）", new AcceptableValueRange<float>(0f, 1f), BellyUiOrder(974)));
             _cfgBellyDistanceAnalyzeTurns = Config.Bind(
                 "10.BellyBoko",
                 "DistanceAnalyzeTurns",
-                2,
-                new ConfigDescription("Distance analysis turns", new AcceptableValueRange<int>(1, 12), BellyUiOrder(973)));
+                10,
+                new ConfigDescription("アナライズ往復数", new AcceptableValueRange<int>(1, 20), BellyUiOrder(973)));
             _cfgBellyDistanceAnalyzeNow = Config.Bind(
                 "10.BellyBoko",
                 "DistanceAnalyzeNow",
                 false,
                 new ConfigDescription(
-                    "Analyze current posture distance (button)",
+                    "現在の体位の距離アナライズを実行（ボタン）",
                     null,
                     new ConfigurationManager.ConfigurationManagerAttributes
                     {
@@ -180,154 +139,46 @@ namespace MainGamePregnancyPlusBridge
                         HideDefaultButton = true,
                         CustomDrawer = DrawBellyDistanceAnalyzeButton
                     }));
-            _cfgBellyAutoReturnMin = Config.Bind(
+            _cfgBellyDistanceAnalyzeKey = Config.Bind(
                 "10.BellyBoko",
-                "AutoReturnMin",
-                true,
-                new ConfigDescription("Auto-calc return-min phase from forward-min and max", null, BellyUiOrder(981)));
-            _cfgBellyForwardMinPhase = Config.Bind(
-                "10.BellyBoko",
-                "ForwardMinPhase",
-                0.15f,
-                new ConfigDescription("Forward MIN phase (0..1)", new AcceptableValueRange<float>(0f, 1f), BellyUiOrder(994)));
-            _cfgBellyMinHoldWidth = Config.Bind(
-                "10.BellyBoko",
-                "MinHoldWidth",
-                0f,
-                new ConfigDescription("Minimum hold phase width (0..1)", new AcceptableValueRange<float>(0f, 1f), BellyUiOrder(993)));
-            _cfgBellyMaxPhase = Config.Bind(
-                "10.BellyBoko",
-                "MaxPhase",
-                0.35f,
-                new ConfigDescription("MAX phase (0..1)", new AcceptableValueRange<float>(0f, 1f), BellyUiOrder(992)));
-            _cfgBellyReturnMinPhase = Config.Bind(
-                "10.BellyBoko",
-                "ReturnMinPhase",
-                0.55f,
-                new ConfigDescription("Return MIN phase (0..1)", new AcceptableValueRange<float>(0f, 1f), BellyUiOrder(991)));
-            _cfgBellyTimelineDisplayOffset = Config.Bind(
-                "10.BellyBoko",
-                "TimelineDisplayOffset",
-                0f,
-                new ConfigDescription("Seekbar display offset (0..1, display only)", new AcceptableValueRange<float>(0f, 1f), BellyUiOrder(990)));
+                "DistanceAnalyzeKey",
+                KeyboardShortcut.Empty,
+                new ConfigDescription("距離アナライズ起動ショートカット（空欄=無効）", null, BellyUiOrder(971)));
             _cfgBellyEaseUp = Config.Bind(
                 "10.BellyBoko",
                 "EaseUp",
                 "easeOut",
-                new ConfigDescription("Curve for ForwardMin->Max", new AcceptableValueList<string>(BellyEaseOptions), BellyUiOrder(989)));
+                new ConfigDescription(
+                    "入るとき（近づく）のカーブ",
+                    new AcceptableValueList<string>("linear", "easeIn", "easeOut", "smoothStep", "smootherStep"),
+                    BellyUiOrder(971)));
             _cfgBellyEaseDown = Config.Bind(
                 "10.BellyBoko",
                 "EaseDown",
                 "easeIn",
-                new ConfigDescription("Curve for Max->ReturnMin", new AcceptableValueList<string>(BellyEaseOptions), BellyUiOrder(988)));
-            _cfgBellyProfileEnabled = Config.Bind(
-                "10.BellyBoko",
-                "ProfileEnabled",
-                true,
-                new ConfigDescription("Enable current animation belly profile", null, BellyUiOrder(996)));
-            _cfgBellyEditMode = Config.Bind(
-                "10.BellyBoko",
-                "EditMode",
-                true,
                 new ConfigDescription(
-                    "Apply source mode: editor sliders (ON) / saved profile (OFF)",
-                    null,
-                    new ConfigurationManager.ConfigurationManagerAttributes
-                    {
-                        Order = 998,
-                        HideDefaultButton = true,
-                        CustomDrawer = DrawBellyApplyModeToggleButton
-                    }));
-            _cfgBellyAutoLoadProfile = Config.Bind(
-                "10.BellyBoko",
-                "AutoLoadProfileOnContextChange",
-                true,
-                new ConfigDescription(
-                    "Auto-load profile when animation context changes (button)",
-                    null,
-                    new ConfigurationManager.ConfigurationManagerAttributes
-                    {
-                        Order = 997,
-                        HideDefaultButton = true,
-                        CustomDrawer = DrawBellyAutoLoadToggleButton
-                    }));
-            _cfgBellyTimelineEditor = Config.Bind(
-                "10.BellyBoko",
-                "TimelineEditor",
-                false,
-                new ConfigDescription(
-                    "Phase seekbar editor (playhead + markers)",
-                    null,
-                    new ConfigurationManager.ConfigurationManagerAttributes
-                    {
-                        Order = 995,
-                        HideDefaultButton = true,
-                        CustomDrawer = DrawBellyTimelineEditor
-                    }));
-
-            _cfgBellySaveProfileNow = Config.Bind(
-                "10.BellyBoko",
-                "SaveProfileNow",
-                false,
-                new ConfigDescription(
-                    "Save current phase settings (button)",
-                    null,
-                    new ConfigurationManager.ConfigurationManagerAttributes
-                    {
-                        Order = 980,
-                        HideDefaultButton = true,
-                        CustomDrawer = DrawBellySaveProfileButton
-                    }));
-            _cfgBellyLoadProfileNow = Config.Bind(
-                "10.BellyBoko",
-                "LoadProfileNow",
-                false,
-                new ConfigDescription(
-                    "Load settings for current animation key (button)",
-                    null,
-                    new ConfigurationManager.ConfigurationManagerAttributes
-                    {
-                        Order = 979,
-                        HideDefaultButton = true,
-                        CustomDrawer = DrawBellyLoadProfileButton
-                    }));
-
+                    "抜けるとき（遠ざかる）のカーブ",
+                    new AcceptableValueList<string>("linear", "easeIn", "easeOut", "smoothStep", "smootherStep"),
+                    BellyUiOrder(970)));
             _cfgBellyContext = Config.Bind(
                 "10.BellyBoko",
                 "CurrentContext",
                 "(no-context)",
-                new ConfigDescription(
-                    "Current matching key: posture/strength/anim",
-                    null,
-                    BellyUiOrderReadOnly(970)));
+                new ConfigDescription("現在のマッチキー: 体位/強弱/アニメ", null, BellyUiOrderReadOnly(969)));
             _cfgBellyMotionStrength = Config.Bind(
                 "10.BellyBoko",
                 "CurrentStrength",
                 MotionStrengthUnknown,
-                new ConfigDescription(
-                    "Current strong/weak classification",
-                    null,
-                    BellyUiOrderReadOnly(969)));
-            _cfgBellySaveProfileNow.SettingChanged += OnBellySaveProfileRequested;
-            _cfgBellyLoadProfileNow.SettingChanged += OnBellyLoadProfileRequested;
-            _cfgBellyForwardMinPhase.SettingChanged += OnBellyEditorValueChanged;
-            _cfgBellyMinHoldWidth.SettingChanged += OnBellyEditorValueChanged;
-            _cfgBellyMaxPhase.SettingChanged += OnBellyEditorValueChanged;
-            _cfgBellyReturnMinPhase.SettingChanged += OnBellyEditorValueChanged;
-            _cfgBellyEaseUp.SettingChanged += OnBellyEditorValueChanged;
-            _cfgBellyEaseDown.SettingChanged += OnBellyEditorValueChanged;
-            _cfgBellyProfileEnabled.SettingChanged += OnBellyEditorValueChanged;
-            _cfgBellyPresetSlot.SettingChanged += OnBellyEditorValueChanged;
+                new ConfigDescription("現在の強/弱分類", null, BellyUiOrderReadOnly(968)));
+
+            _cfgBellyDistanceAnalyzeNow.SettingChanged += OnBellyDistanceAnalyzeRequested;
             _cfgBellyMinInflationSize.SettingChanged += OnBellyEditorValueChanged;
             _cfgBellyMaxInflationSize.SettingChanged += OnBellyEditorValueChanged;
-            _cfgBellyDistanceMode.SettingChanged += OnBellyEditorValueChanged;
             _cfgBellyDistanceCutPercent.SettingChanged += OnBellyEditorValueChanged;
             _cfgBellyDistanceMinMeters.SettingChanged += OnBellyEditorValueChanged;
             _cfgBellyDistanceMaxMeters.SettingChanged += OnBellyEditorValueChanged;
             _cfgBellyDistanceSmoothing.SettingChanged += OnBellyEditorValueChanged;
             _cfgBellyDistanceAnalyzeTurns.SettingChanged += OnBellyEditorValueChanged;
-            _cfgBellyDistanceAnalyzeNow.SettingChanged += OnBellyDistanceAnalyzeRequested;
-            _cfgBellyAutoReturnMin.SettingChanged += OnBellyEditorValueChanged;
 
             _cfgBellyPresetSlot.Value = Mathf.Clamp(_cfgBellyPresetSlot.Value, 1, 20);
             _cfgBellyMinInflationSize.Value = Mathf.Clamp(_cfgBellyMinInflationSize.Value, 0f, 40f);
@@ -336,342 +187,16 @@ namespace MainGamePregnancyPlusBridge
             _cfgBellyDistanceMinMeters.Value = Mathf.Clamp(_cfgBellyDistanceMinMeters.Value, 0f, 2f);
             _cfgBellyDistanceMaxMeters.Value = Mathf.Clamp(_cfgBellyDistanceMaxMeters.Value, 0f, 2f);
             _cfgBellyDistanceSmoothing.Value = Mathf.Clamp01(_cfgBellyDistanceSmoothing.Value);
-            _cfgBellyDistanceAnalyzeTurns.Value = Mathf.Clamp(_cfgBellyDistanceAnalyzeTurns.Value, 1, 12);
-            _cfgBellyMinHoldWidth.Value = Mathf.Clamp01(_cfgBellyMinHoldWidth.Value);
-            _cfgBellyTimelineDisplayOffset.Value = NormalizePhase01(_cfgBellyTimelineDisplayOffset.Value);
+            _cfgBellyDistanceAnalyzeTurns.Value = Mathf.Clamp(_cfgBellyDistanceAnalyzeTurns.Value, 1, 20);
             _cfgBellyEaseUp.Value = NormalizeEaseName(_cfgBellyEaseUp.Value, "easeOut");
             _cfgBellyEaseDown.Value = NormalizeEaseName(_cfgBellyEaseDown.Value, "easeIn");
         }
 
-        private void DrawBellySaveProfileButton(ConfigEntryBase entryBase)
-        {
-            if (GUILayout.Button("SAVE PROFILE", GUILayout.MinWidth(120f)))
-                SaveBellyProfileFromEditor(forcePopup: true);
-        }
-
-        private void DrawBellyApplyModeToggleButton(ConfigEntryBase entryBase)
-        {
-            bool editMode = _cfgBellyEditMode == null || _cfgBellyEditMode.Value;
-            string label = editMode ? "MODE: EDIT" : "MODE: PLAY";
-            if (!GUILayout.Button(label, GUILayout.MinWidth(130f)))
-                return;
-
-            _cfgBellyEditMode.Value = !editMode;
-            _dirty = true;
-            ShowPresetPopup(_cfgBellyEditMode.Value ? "腹ボコモード: 編集" : "腹ボコモード: 再生", false);
-        }
-
-        private void DrawBellyAutoLoadToggleButton(ConfigEntryBase entryBase)
-        {
-            string label = _cfgBellyAutoLoadProfile != null && _cfgBellyAutoLoadProfile.Value
-                ? "AUTO LOAD: ON"
-                : "AUTO LOAD: OFF";
-
-            if (!GUILayout.Button(label, GUILayout.MinWidth(140f)))
-                return;
-
-            _cfgBellyAutoLoadProfile.Value = !(_cfgBellyAutoLoadProfile != null && _cfgBellyAutoLoadProfile.Value);
-            _dirty = true;
-            ShowPresetPopup(
-                _cfgBellyAutoLoadProfile.Value ? "自動プロファイル読込: 有効" : "自動プロファイル読込: 無効",
-                false);
-        }
-
-        private void DrawBellyLoadProfileButton(ConfigEntryBase entryBase)
-        {
-            if (GUILayout.Button("LOAD PROFILE", GUILayout.MinWidth(120f)))
-                LoadBellyProfileToEditor(forcePopup: true);
-        }
-
         private void DrawBellyDistanceAnalyzeButton(ConfigEntryBase entryBase)
         {
-            string label = _bellyDistanceAnalyzeActive
-                ? "ANALYZING..."
-                : "ANALYZE DISTANCE";
-            if (!GUILayout.Button(label, GUILayout.MinWidth(150f)))
-                return;
-
-            RequestBellyDistanceAnalyzeNow();
-        }
-
-        private void DrawBellyTimelineEditor(ConfigEntryBase entryBase)
-        {
-            float forwardMin = NormalizePhase01(_cfgBellyForwardMinPhase.Value);
-            float minHoldWidth = Mathf.Clamp01(_cfgBellyMinHoldWidth.Value);
-            float maxPhase = NormalizePhase01(_cfgBellyMaxPhase.Value);
-            float returnMinPhase = NormalizePhase01(_cfgBellyReturnMinPhase.Value);
-            float displayOffset = NormalizePhase01(_cfgBellyTimelineDisplayOffset.Value);
-
-            CoerceBellyTimelineValues(ref forwardMin, ref minHoldWidth, ref maxPhase, ref returnMinPhase);
-
-            if (!Mathf.Approximately(forwardMin, _cfgBellyForwardMinPhase.Value)
-                || !Mathf.Approximately(minHoldWidth, _cfgBellyMinHoldWidth.Value)
-                || !Mathf.Approximately(maxPhase, _cfgBellyMaxPhase.Value)
-                || !Mathf.Approximately(returnMinPhase, _cfgBellyReturnMinPhase.Value))
-            {
-                ApplyBellyTimelineValues(forwardMin, minHoldWidth, maxPhase, returnMinPhase, saveProfile: false);
-            }
-
-            float dMax = PhaseDistanceForward(forwardMin, maxPhase);
-            float dHold = Mathf.Clamp(minHoldWidth, 0f, Mathf.Max(0f, dMax - BellyTimelineMinGap));
-            float holdEnd = NormalizePhase01(forwardMin + dHold);
-            float playPhase = _hasBellyCurrentPhase ? NormalizePhase01(_bellyCurrentPhase) : 0f;
-            Rect rootRect = GUILayoutUtility.GetRect(1f, 10000f, 118f, 118f, GUILayout.ExpandWidth(true));
-            float innerW = Mathf.Max(120f, rootRect.width - 12f);
-            float left = rootRect.x + 6f;
-
-            float buttonW = Mathf.Min(112f, (innerW - 8f) * 0.5f);
-            Rect centerBtnRect = new Rect(left, rootRect.y + 2f, buttonW, 20f);
-            Rect resetBtnRect = new Rect(left + buttonW + 8f, rootRect.y + 2f, buttonW, 20f);
-            Rect offsetLabelRect = new Rect(left, rootRect.y + 25f, 65f, 18f);
-            Rect offsetSliderRect = new Rect(left + 68f, rootRect.y + 27f, Mathf.Max(40f, innerW - 124f), 14f);
-            Rect offsetValueRect = new Rect(left + innerW - 52f, rootRect.y + 25f, 52f, 18f);
-
-            if (GUI.Button(centerBtnRect, "最大を中央へ"))
-            {
-                displayOffset = NormalizePhase01(0.5f - maxPhase);
-                _cfgBellyTimelineDisplayOffset.Value = displayOffset;
-                ShowPresetPopup("位相表示を最大中心へ移動", false);
-            }
-            if (GUI.Button(resetBtnRect, "表示リセット"))
-            {
-                displayOffset = 0f;
-                _cfgBellyTimelineDisplayOffset.Value = 0f;
-                ShowPresetPopup("位相表示をリセット", false);
-            }
-
-            GUI.Label(offsetLabelRect, "表示ずらし");
-            float newDisplayOffset = GUI.HorizontalSlider(offsetSliderRect, displayOffset, 0f, 1f);
-            GUI.Label(offsetValueRect, displayOffset.ToString("0.000"));
-            if (!Mathf.Approximately(newDisplayOffset, displayOffset))
-            {
-                displayOffset = NormalizePhase01(newDisplayOffset);
-                _cfgBellyTimelineDisplayOffset.Value = displayOffset;
-            }
-
-            float displayForwardMin = NormalizePhase01(forwardMin + displayOffset);
-            float displayHoldEnd = NormalizePhase01(holdEnd + displayOffset);
-            float displayMaxPhase = NormalizePhase01(maxPhase + displayOffset);
-            float displayReturnMin = NormalizePhase01(returnMinPhase + displayOffset);
-            float displayPlayPhase = NormalizePhase01(playPhase + displayOffset);
-
-            Rect titleRect = new Rect(left, rootRect.y + 45f, innerW, 18f);
-            Rect barRect = new Rect(left + 4f, rootRect.y + 67f, Mathf.Max(80f, innerW - 8f), 16f);
-            Rect textRect = new Rect(left, rootRect.y + 87f, innerW, 30f);
-
-            GUI.Label(titleRect, "位相シークバー（再生ヘッド追従 / 行き最小・待機終端・最大・帰り最小）");
-            DrawBellyTimelineBar(barRect, displayForwardMin, displayHoldEnd, displayMaxPhase, displayReturnMin, displayPlayPhase);
-
-            GUI.Label(
-                textRect,
-                "行き最小 " + forwardMin.ToString("0.000")
-                + " / 待機 " + minHoldWidth.ToString("0.000")
-                + " / 最大 " + maxPhase.ToString("0.000")
-                + " / 帰り最小 " + returnMinPhase.ToString("0.000")
-                + " / 再生 " + playPhase.ToString("0.000"));
-
-            Event e = Event.current;
-            if (e == null)
-                return;
-
-            if (e.type == EventType.MouseDown && e.button == 0 && barRect.Contains(e.mousePosition))
-            {
-                _bellyTimelineDragHandle = FindNearestTimelineHandle(barRect, e.mousePosition.x, displayForwardMin, displayHoldEnd, displayMaxPhase, displayReturnMin);
-                _bellyTimelineDragDirty = false;
-                if (_bellyTimelineDragHandle >= 0)
-                    e.Use();
-            }
-
-            if (_bellyTimelineDragHandle >= 0 && e.type == EventType.MouseDrag)
-            {
-                float p = Mathf.Clamp01((e.mousePosition.x - barRect.x) / Mathf.Max(1f, barRect.width));
-                float realP = NormalizePhase01(p - displayOffset);
-                float newForwardMin = forwardMin;
-                float newHoldEnd = holdEnd;
-                float newMaxPhase = maxPhase;
-                float newReturnMin = returnMinPhase;
-
-                switch (_bellyTimelineDragHandle)
-                {
-                    case 0:
-                        newForwardMin = realP;
-                        break;
-                    case 1:
-                        newHoldEnd = realP;
-                        break;
-                    case 2:
-                        newMaxPhase = realP;
-                        break;
-                    case 3:
-                        newReturnMin = realP;
-                        break;
-                }
-
-                float newHoldWidth = PhaseDistanceForward(newForwardMin, newHoldEnd);
-                CoerceBellyTimelineValues(ref newForwardMin, ref newHoldWidth, ref newMaxPhase, ref newReturnMin);
-                ApplyBellyTimelineValues(newForwardMin, newHoldWidth, newMaxPhase, newReturnMin, saveProfile: false);
-                _bellyTimelineDragDirty = true;
-                _dirty = true;
-                e.Use();
-            }
-
-            if (_bellyTimelineDragHandle >= 0 && e.type == EventType.MouseUp)
-            {
-                int releasedHandle = _bellyTimelineDragHandle;
-                _bellyTimelineDragHandle = -1;
-                if (releasedHandle >= 0 && _bellyTimelineDragDirty)
-                {
-                    _bellyTimelineDragDirty = false;
-                    if (_cfgBellyEditMode == null || _cfgBellyEditMode.Value)
-                        SaveBellyProfileFromEditor(forcePopup: false);
-                }
-                e.Use();
-            }
-        }
-
-        private void DrawBellyTimelineBar(Rect barRect, float forwardMin, float holdEnd, float maxPhase, float returnMinPhase, float playPhase)
-        {
-            Color prev = GUI.color;
-
-            GUI.color = new Color(0.12f, 0.12f, 0.12f, 0.9f);
-            GUI.DrawTexture(barRect, Texture2D.whiteTexture);
-
-            DrawTimelineSegment(barRect, forwardMin, holdEnd, new Color(0.25f, 0.55f, 0.95f, 0.9f));
-            DrawTimelineSegment(barRect, holdEnd, maxPhase, new Color(0.95f, 0.62f, 0.22f, 0.9f));
-            DrawTimelineSegment(barRect, maxPhase, returnMinPhase, new Color(0.35f, 0.85f, 0.45f, 0.9f));
-
-            DrawTimelineMarker(barRect, forwardMin, new Color(0.25f, 0.75f, 1f, 1f), 3f);
-            DrawTimelineMarker(barRect, holdEnd, new Color(0.3f, 0.6f, 1f, 1f), 2f);
-            DrawTimelineMarker(barRect, maxPhase, new Color(1f, 0.78f, 0.25f, 1f), 3f);
-            DrawTimelineMarker(barRect, returnMinPhase, new Color(0.45f, 1f, 0.55f, 1f), 3f);
-            DrawTimelineMarker(barRect, playPhase, new Color(1f, 0.2f, 0.2f, 1f), 2f);
-
-            GUI.color = prev;
-        }
-
-        private static void DrawTimelineSegment(Rect barRect, float fromPhase, float toPhase, Color color)
-        {
-            float a = NormalizePhase01(fromPhase);
-            float b = NormalizePhase01(toPhase);
-
-            if (Mathf.Abs(a - b) <= 1e-6f)
-                return;
-
-            if (b >= a)
-            {
-                DrawTimelineSegmentLinear(barRect, a, b, color);
-                return;
-            }
-
-            DrawTimelineSegmentLinear(barRect, a, 1f, color);
-            DrawTimelineSegmentLinear(barRect, 0f, b, color);
-        }
-
-        private static void DrawTimelineSegmentLinear(Rect barRect, float fromPhase, float toPhase, Color color)
-        {
-            float x0 = barRect.x + Mathf.Clamp01(fromPhase) * barRect.width;
-            float x1 = barRect.x + Mathf.Clamp01(toPhase) * barRect.width;
-            if (x1 <= x0)
-                return;
-
-            Rect seg = new Rect(x0, barRect.y, Mathf.Max(1f, x1 - x0), barRect.height);
-            Color prev = GUI.color;
-            GUI.color = color;
-            GUI.DrawTexture(seg, Texture2D.whiteTexture);
-            GUI.color = prev;
-        }
-
-        private static void DrawTimelineMarker(Rect barRect, float phase, Color color, float width)
-        {
-            float x = barRect.x + Mathf.Clamp01(phase) * barRect.width - (width * 0.5f);
-            Rect mark = new Rect(x, barRect.y - 3f, Mathf.Max(1f, width), barRect.height + 6f);
-            Color prev = GUI.color;
-            GUI.color = color;
-            GUI.DrawTexture(mark, Texture2D.whiteTexture);
-            GUI.color = prev;
-        }
-
-        private static int FindNearestTimelineHandle(Rect barRect, float mouseX, float forwardMin, float holdEnd, float maxPhase, float returnMinPhase)
-        {
-            float[] phases = { forwardMin, holdEnd, maxPhase, returnMinPhase };
-            int best = -1;
-            float bestDist = 14f;
-            for (int i = 0; i < phases.Length; i++)
-            {
-                float x = barRect.x + Mathf.Clamp01(phases[i]) * barRect.width;
-                float d = Mathf.Abs(mouseX - x);
-                if (d < bestDist)
-                {
-                    bestDist = d;
-                    best = i;
-                }
-            }
-            return best;
-        }
-
-        private void ApplyBellyTimelineValues(float forwardMin, float minHoldWidth, float maxPhase, float returnMinPhase, bool saveProfile)
-        {
-            _bellyEditorSyncGuard = true;
-            try
-            {
-                _cfgBellyForwardMinPhase.Value = NormalizePhase01(forwardMin);
-                _cfgBellyMinHoldWidth.Value = Mathf.Clamp01(minHoldWidth);
-                _cfgBellyMaxPhase.Value = NormalizePhase01(maxPhase);
-                _cfgBellyReturnMinPhase.Value = NormalizePhase01(returnMinPhase);
-            }
-            finally
-            {
-                _bellyEditorSyncGuard = false;
-            }
-
-            if (saveProfile && (_cfgBellyEditMode == null || _cfgBellyEditMode.Value))
-                SaveBellyProfileFromEditor(forcePopup: false);
-        }
-
-        private static void CoerceBellyTimelineValues(ref float forwardMin, ref float minHoldWidth, ref float maxPhase, ref float returnMinPhase)
-        {
-            forwardMin = Mathf.Clamp01(forwardMin);
-            float maxDist = PhaseDistanceForward(forwardMin, maxPhase);
-            maxDist = Mathf.Clamp(maxDist, BellyTimelineMinGap * 2f, 1f - (BellyTimelineMinGap * 2f));
-
-            float returnDist = PhaseDistanceForward(forwardMin, returnMinPhase);
-            returnDist = Mathf.Clamp(returnDist, maxDist + BellyTimelineMinGap, 1f - BellyTimelineMinGap);
-
-            float holdDist = Mathf.Clamp(minHoldWidth, 0f, Mathf.Max(0f, maxDist - BellyTimelineMinGap));
-
-            minHoldWidth = holdDist;
-            maxPhase = NormalizePhase01(forwardMin + maxDist);
-            returnMinPhase = NormalizePhase01(forwardMin + returnDist);
-        }
-
-        private void OnBellySaveProfileRequested(object sender, EventArgs e)
-        {
-            if (_bellyTriggerGuard || !_cfgBellySaveProfileNow.Value)
-                return;
-
-            try
-            {
-                SaveBellyProfileFromEditor(forcePopup: true);
-            }
-            finally
-            {
-                ResetBellyTrigger(_cfgBellySaveProfileNow);
-            }
-        }
-
-        private void OnBellyLoadProfileRequested(object sender, EventArgs e)
-        {
-            if (_bellyTriggerGuard || !_cfgBellyLoadProfileNow.Value)
-                return;
-
-            try
-            {
-                LoadBellyProfileToEditor(forcePopup: true);
-            }
-            finally
-            {
-                ResetBellyTrigger(_cfgBellyLoadProfileNow);
-            }
+            string label = _bellyDistanceAnalyzeActive ? "ANALYZING..." : "ANALYZE DISTANCE";
+            if (GUILayout.Button(label, GUILayout.MinWidth(150f)))
+                RequestBellyDistanceAnalyzeNow();
         }
 
         private void OnBellyDistanceAnalyzeRequested(object sender, EventArgs e)
@@ -686,19 +211,6 @@ namespace MainGamePregnancyPlusBridge
             finally
             {
                 ResetBellyDistanceAnalyzeTrigger();
-            }
-        }
-
-        private void ResetBellyTrigger(ConfigEntry<bool> trigger)
-        {
-            _bellyTriggerGuard = true;
-            try
-            {
-                trigger.Value = false;
-            }
-            finally
-            {
-                _bellyTriggerGuard = false;
             }
         }
 
@@ -726,7 +238,7 @@ namespace MainGamePregnancyPlusBridge
                 return;
             }
 
-            int turns = Mathf.Clamp(_cfgBellyDistanceAnalyzeTurns != null ? _cfgBellyDistanceAnalyzeTurns.Value : 2, 1, 12);
+            int turns = Mathf.Clamp(_cfgBellyDistanceAnalyzeTurns != null ? _cfgBellyDistanceAnalyzeTurns.Value : 10, 1, 20);
             _bellyDistanceAnalyzeActive = true;
             _bellyDistanceAnalyzeTargetTurns = turns;
             _bellyDistanceAnalyzeCompletedTurns = 0;
@@ -743,33 +255,20 @@ namespace MainGamePregnancyPlusBridge
 
         private void OnBellyEditorValueChanged(object sender, EventArgs e)
         {
-            if (_bellyEditorSyncGuard)
-                return;
-
-            _bellyEditorSyncGuard = true;
-            try
-            {
-                _cfgBellyEaseUp.Value = NormalizeEaseName(_cfgBellyEaseUp.Value, "easeOut");
-                _cfgBellyEaseDown.Value = NormalizeEaseName(_cfgBellyEaseDown.Value, "easeIn");
-                _cfgBellyDistanceCutPercent.Value = Mathf.Clamp01(_cfgBellyDistanceCutPercent.Value);
-                _cfgBellyDistanceMinMeters.Value = Mathf.Clamp(_cfgBellyDistanceMinMeters.Value, 0f, 2f);
-                _cfgBellyDistanceMaxMeters.Value = Mathf.Clamp(_cfgBellyDistanceMaxMeters.Value, 0f, 2f);
-                _cfgBellyDistanceSmoothing.Value = Mathf.Clamp01(_cfgBellyDistanceSmoothing.Value);
-                _cfgBellyDistanceAnalyzeTurns.Value = Mathf.Clamp(_cfgBellyDistanceAnalyzeTurns.Value, 1, 12);
-            }
-            finally
-            {
-                _bellyEditorSyncGuard = false;
-            }
-
+            _cfgBellyDistanceCutPercent.Value = Mathf.Clamp01(_cfgBellyDistanceCutPercent.Value);
+            _cfgBellyDistanceMinMeters.Value = Mathf.Clamp(_cfgBellyDistanceMinMeters.Value, 0f, 2f);
+            _cfgBellyDistanceMaxMeters.Value = Mathf.Clamp(_cfgBellyDistanceMaxMeters.Value, 0f, 2f);
+            _cfgBellyDistanceSmoothing.Value = Mathf.Clamp01(_cfgBellyDistanceSmoothing.Value);
+            _cfgBellyDistanceAnalyzeTurns.Value = Mathf.Clamp(_cfgBellyDistanceAnalyzeTurns.Value, 1, 20);
             _dirty = true;
-            if (_cfgBellyEditMode == null || _cfgBellyEditMode.Value)
-                SaveBellyProfileFromEditor(forcePopup: false);
         }
 
         private bool UpdateBellyBokoRuntime()
         {
             _hasRuntimeInflationSizeOverride = false;
+
+            if (_cfgBellyDistanceAnalyzeKey != null && _cfgBellyDistanceAnalyzeKey.Value.IsDown())
+                RequestBellyDistanceAnalyzeNow();
 
             if (!_cfgBellyEnabled.Value)
             {
@@ -785,13 +284,22 @@ namespace MainGamePregnancyPlusBridge
 
             _cfgBellyContext.Value = context.DisplayText;
             _cfgBellyMotionStrength.Value = context.MotionStrength;
-            _bellyCurrentPhase = context.Phase;
-            _hasBellyCurrentPhase = true;
 
-            if (!IsStrongOrWeakMotionStrength(context.MotionStrength))
+            bool isPiston = IsStrongOrWeakMotionStrength(context.MotionStrength);
+            if (!isPiston)
             {
-                LogBellyGate("unsupported-strength", context);
-                return false;
+                // S_Idleは腹ボコ非適用
+                if (IsIdleClip(context.ClipName))
+                {
+                    LogBellyGate("idle-skip", context);
+                    return false;
+                }
+                // 強ピストンプロファイルが未取得なら非適用
+                if (_bellyFallbackProfile == null)
+                {
+                    LogBellyGate("no-fallback-profile", context);
+                    return false;
+                }
             }
 
             if (!string.Equals(_bellyCurrentAnimationKey ?? string.Empty, context.AnimationKey ?? string.Empty, StringComparison.Ordinal))
@@ -799,321 +307,77 @@ namespace MainGamePregnancyPlusBridge
                 LogInfo("belly context changed key=" + context.AnimationKey);
                 _bellyCurrentAnimationKey = context.AnimationKey;
                 _hasBellyDistanceSmoothed = false;
+                _hasBellyDistancePrev = false;
+                _bellyFallbackProfile = null;
                 if (_bellyDistanceAnalyzeActive && !string.Equals(_bellyDistanceAnalyzeKey ?? string.Empty, context.AnimationKey ?? string.Empty, StringComparison.Ordinal))
                 {
                     _bellyDistanceAnalyzeActive = false;
                     ShowPresetPopup("距離分析中断: 体位が切り替わりました", true);
                     LogInfo("belly distance analysis aborted reason=context-changed");
                 }
-                if (_cfgBellyAutoLoadProfile == null || _cfgBellyAutoLoadProfile.Value)
-                {
-                    bool hasAnyForPosture = _bellyStore != null
-                        && _bellyStore.HasAnyForPostureStrength(context.PostureId, context.PostureMode, context.MotionStrength);
-                    if (hasAnyForPosture)
-                    {
-                        LoadBellyProfileToEditor(forcePopup: false);
-                    }
-                    else
-                    {
-                        LogInfo("belly auto-load skipped reason=posture-not-configured key=" + context.ShortKeyText);
-                    }
-                }
-                else
-                {
-                    LogInfo("belly auto-load skipped reason=disabled");
-                }
+                LoadBellyProfile(context);
+                LoadBellyFallbackProfile(context);
             }
 
-            HandleBellyCaptureKeys(context);
-
-            if (!_cfgBellyProfileEnabled.Value)
+            float minInflationSize, maxInflationSize, distanceCutPercent, distanceMinMeters, distanceMaxMeters, distanceSmoothing;
+            string easeUp, easeDown;
+            if (isPiston || _bellyFallbackProfile == null)
             {
-                LogBellyGate("profile-disabled", context);
-                return false;
-            }
-
-            bool editModeApply = _cfgBellyEditMode == null || _cfgBellyEditMode.Value;
-            bool autoLoadProfile = _cfgBellyAutoLoadProfile == null || _cfgBellyAutoLoadProfile.Value;
-            bool hasConfiguredForPosture = _bellyStore != null
-                && _bellyStore.HasAnyForPostureStrength(context.PostureId, context.PostureMode, context.MotionStrength);
-
-            if (!editModeApply && autoLoadProfile && !hasConfiguredForPosture)
-                return ApplyBellyFlat(context, "play-posture-unconfigured-flat");
-
-            float forwardMinPhase;
-            float minHoldWidth;
-            float maxPhase;
-            float returnMinPhase;
-            string easeUp;
-            string easeDown;
-            float minInflationSize;
-            float maxInflationSize;
-            bool distanceMode;
-            float distanceCutPercent;
-            float distanceMinMeters;
-            float distanceMaxMeters;
-            float distanceSmoothing;
-            BellyBokoProfile activeProfile = null;
-
-            if (!editModeApply && autoLoadProfile)
-            {
-                if (!_bellyStore.TryGet(context.AnimationKey, out BellyBokoProfile profile) || profile == null)
-                {
-                    return ApplyBellyFlat(context, "play-profile-missing-flat");
-                }
-
-                if (!profile.Enabled)
-                {
-                    return ApplyBellyFlat(context, "play-profile-disabled-flat");
-                }
-
-                activeProfile = profile;
-                forwardMinPhase = NormalizePhase01(profile.ForwardMinPhase);
-                minHoldWidth = Mathf.Clamp01(profile.MinHoldWidth);
-                maxPhase = NormalizePhase01(profile.MaxPhase);
-                returnMinPhase = NormalizePhase01(profile.ReturnMinPhase);
-                easeUp = NormalizeEaseName(profile.EaseUp, "easeOut");
-                easeDown = NormalizeEaseName(profile.EaseDown, "easeIn");
-                minInflationSize = Mathf.Clamp(profile.MinInflationSize, 0f, 40f);
-                maxInflationSize = Mathf.Clamp(profile.MaxInflationSize, 0f, 40f);
-                distanceMode = profile.DistanceMode;
-                distanceCutPercent = Mathf.Clamp01(profile.DistanceCutPercent);
-                distanceMinMeters = Mathf.Clamp(profile.DistanceMinMeters, 0f, 2f);
-                distanceMaxMeters = Mathf.Clamp(profile.DistanceMaxMeters, 0f, 2f);
-                distanceSmoothing = Mathf.Clamp01(profile.DistanceSmoothing);
-            }
-            else
-            {
-                activeProfile = new BellyBokoProfile
-                {
-                    Enabled = true,
-                    EaseUp = NormalizeEaseName(_cfgBellyEaseUp.Value, "easeOut"),
-                    EaseDown = NormalizeEaseName(_cfgBellyEaseDown.Value, "easeIn")
-                };
-
-                forwardMinPhase = NormalizePhase01(_cfgBellyForwardMinPhase.Value);
-                minHoldWidth = Mathf.Clamp01(_cfgBellyMinHoldWidth.Value);
-                maxPhase = NormalizePhase01(_cfgBellyMaxPhase.Value);
-                returnMinPhase = NormalizePhase01(_cfgBellyReturnMinPhase.Value);
-                easeUp = NormalizeEaseName(_cfgBellyEaseUp.Value, "easeOut");
-                easeDown = NormalizeEaseName(_cfgBellyEaseDown.Value, "easeIn");
                 minInflationSize = Mathf.Clamp(_cfgBellyMinInflationSize.Value, 0f, 40f);
                 maxInflationSize = Mathf.Clamp(_cfgBellyMaxInflationSize.Value, 0f, 40f);
-                distanceMode = _cfgBellyDistanceMode != null && _cfgBellyDistanceMode.Value;
                 distanceCutPercent = Mathf.Clamp01(_cfgBellyDistanceCutPercent != null ? _cfgBellyDistanceCutPercent.Value : 0.5f);
                 distanceMinMeters = Mathf.Clamp(_cfgBellyDistanceMinMeters != null ? _cfgBellyDistanceMinMeters.Value : 0.04f, 0f, 2f);
                 distanceMaxMeters = Mathf.Clamp(_cfgBellyDistanceMaxMeters != null ? _cfgBellyDistanceMaxMeters.Value : 0.24f, 0f, 2f);
                 distanceSmoothing = Mathf.Clamp01(_cfgBellyDistanceSmoothing != null ? _cfgBellyDistanceSmoothing.Value : 0.35f);
-
-                if (!editModeApply)
-                    LogBellyGate("play-local-values", context);
-            }
-
-            float normalizedWeight;
-            if (distanceMode)
-            {
-                if (!context.HasDistance)
-                {
-                    _runtimeInflationSizeOverride = minInflationSize;
-                    _hasRuntimeInflationSizeOverride = true;
-                    LogBellyGate("distance-ref-missing", context);
-                    return true;
-                }
-
-                float currentDistance = Mathf.Max(0f, context.Distance);
-                if (_hasBellyDistanceSmoothed)
-                    _bellyDistanceSmoothed = Mathf.Lerp(currentDistance, _bellyDistanceSmoothed, distanceSmoothing);
-                else
-                    _bellyDistanceSmoothed = currentDistance;
-                _hasBellyDistanceSmoothed = true;
-
-                float evalDistance = _bellyDistanceSmoothed;
-                EnsureDistanceRange(ref distanceMinMeters, ref distanceMaxMeters);
-                normalizedWeight = EvaluateDistanceWeight(evalDistance, distanceMinMeters, distanceMaxMeters, distanceCutPercent, easeDown);
-                UpdateDistanceAnalysis(context, currentDistance, evalDistance);
+                easeUp = NormalizeEaseName(_cfgBellyEaseUp != null ? _cfgBellyEaseUp.Value : "easeOut", "easeOut");
+                easeDown = NormalizeEaseName(_cfgBellyEaseDown != null ? _cfgBellyEaseDown.Value : "easeIn", "easeIn");
             }
             else
             {
-                if (_bellyDistanceAnalyzeActive)
-                {
-                    _bellyDistanceAnalyzeActive = false;
-                    LogInfo("belly distance analysis aborted reason=mode-phase");
-                }
-
-                CoerceBellyTimelineValues(ref forwardMinPhase, ref minHoldWidth, ref maxPhase, ref returnMinPhase);
-
-                normalizedWeight = EvaluateBellyWeight(
-                    context.Phase,
-                    forwardMinPhase,
-                    minHoldWidth,
-                    maxPhase,
-                    returnMinPhase,
-                    easeUp,
-                    easeDown);
+                // 非ピストンモーション: 強ピストンプロファイルから距離レンジを流用
+                minInflationSize = Mathf.Clamp(_bellyFallbackProfile.MinInflationSize, 0f, 40f);
+                maxInflationSize = Mathf.Clamp(_bellyFallbackProfile.MaxInflationSize, 0f, 40f);
+                distanceCutPercent = Mathf.Clamp01(_bellyFallbackProfile.DistanceCutPercent);
+                distanceMinMeters = Mathf.Clamp(_bellyFallbackProfile.DistanceMinMeters, 0f, 2f);
+                distanceMaxMeters = Mathf.Clamp(_bellyFallbackProfile.DistanceMaxMeters, 0f, 2f);
+                distanceSmoothing = Mathf.Clamp01(_bellyFallbackProfile.DistanceSmoothing);
+                easeUp = NormalizeEaseName(_bellyFallbackProfile.EaseUp, "easeOut");
+                easeDown = NormalizeEaseName(_bellyFallbackProfile.EaseDown, "easeIn");
             }
+
+            if (!context.HasDistance)
+            {
+                _runtimeInflationSizeOverride = minInflationSize;
+                _hasRuntimeInflationSizeOverride = true;
+                LogBellyGate("distance-ref-missing", context);
+                return true;
+            }
+
+            float currentDistance = Mathf.Max(0f, context.Distance);
+            if (_hasBellyDistanceSmoothed)
+                _bellyDistanceSmoothed = Mathf.Lerp(currentDistance, _bellyDistanceSmoothed, distanceSmoothing);
+            else
+                _bellyDistanceSmoothed = currentDistance;
+            _hasBellyDistanceSmoothed = true;
+
+            // 近づいているか遠ざかっているかで使うカーブを切り替える
+            bool approaching = _hasBellyDistancePrev && (_bellyDistanceSmoothed < _bellyDistancePrev);
+            string activeEase = approaching ? easeUp : easeDown;
+            _bellyDistancePrev = _bellyDistanceSmoothed;
+            _hasBellyDistancePrev = true;
+
+            float evalDistance = _bellyDistanceSmoothed;
+            EnsureDistanceRange(ref distanceMinMeters, ref distanceMaxMeters);
+            float normalizedWeight = EvaluateDistanceWeight(evalDistance, distanceMinMeters, distanceMaxMeters, distanceCutPercent, activeEase);
+            UpdateDistanceAnalysis(context, currentDistance, evalDistance);
 
             float targetSize = Mathf.Lerp(minInflationSize, maxInflationSize, normalizedWeight);
             _runtimeInflationSizeOverride = Mathf.Clamp(targetSize, 0f, 40f);
             _hasRuntimeInflationSizeOverride = true;
 
-            activeProfile.ForwardMinPhase = forwardMinPhase;
-            activeProfile.MinHoldWidth = minHoldWidth;
-            activeProfile.MaxPhase = maxPhase;
-            activeProfile.ReturnMinPhase = returnMinPhase;
-            activeProfile.MinInflationSize = minInflationSize;
-            activeProfile.MaxInflationSize = maxInflationSize;
-            activeProfile.Enabled = true;
-            activeProfile.EaseUp = easeUp;
-            activeProfile.EaseDown = easeDown;
-            activeProfile.DistanceMode = distanceMode;
-            activeProfile.DistanceCutPercent = distanceCutPercent;
-            activeProfile.DistanceMinMeters = distanceMinMeters;
-            activeProfile.DistanceMaxMeters = distanceMaxMeters;
-            activeProfile.DistanceSmoothing = distanceSmoothing;
-
             LogBellyGate(Mathf.Abs(maxInflationSize - minInflationSize) <= 0.0001f ? "applied-flat-range" : "applied", context);
-            LogBellyApplySample(context, activeProfile, normalizedWeight, _runtimeInflationSizeOverride);
+            LogBellyApplySample(context, normalizedWeight, _runtimeInflationSizeOverride, minInflationSize, maxInflationSize, distanceMinMeters, distanceMaxMeters, activeEase);
             return true;
-        }
-
-        private void HandleBellyCaptureKeys(BellyContext context)
-        {
-            if (!_cfgBellyCaptureEnabled.Value)
-                return;
-            if (!(_cfgBellyEditMode == null || _cfgBellyEditMode.Value))
-                return;
-            if (_cfgBellyDistanceMode != null && _cfgBellyDistanceMode.Value)
-                return;
-
-            KeyboardShortcut maxShortcut = _cfgBellyCaptureMaxKey.Value;
-            if (IsCaptureShortcutAssigned(maxShortcut) && maxShortcut.IsDown())
-            {
-                _cfgBellyMaxPhase.Value = NormalizePhase01(context.Phase);
-                if (_cfgBellyAutoReturnMin.Value)
-                {
-                    float span = PhaseDistanceForward(_cfgBellyForwardMinPhase.Value, _cfgBellyMaxPhase.Value);
-                    _cfgBellyReturnMinPhase.Value = NormalizePhase01(_cfgBellyMaxPhase.Value + span);
-                }
-                SaveBellyProfileFromEditor(forcePopup: true);
-                ShowPresetPopup("最大位相を記録: 位相=" + _cfgBellyMaxPhase.Value.ToString("0.000"), false);
-            }
-
-            KeyboardShortcut minShortcut = _cfgBellyCaptureMinKey.Value;
-            if (IsCaptureShortcutAssigned(minShortcut) && minShortcut.IsDown())
-            {
-                _cfgBellyForwardMinPhase.Value = NormalizePhase01(context.Phase);
-                if (_cfgBellyAutoReturnMin.Value)
-                {
-                    float span = PhaseDistanceForward(_cfgBellyForwardMinPhase.Value, _cfgBellyMaxPhase.Value);
-                    _cfgBellyReturnMinPhase.Value = NormalizePhase01(_cfgBellyMaxPhase.Value + span);
-                }
-                SaveBellyProfileFromEditor(forcePopup: true);
-                ShowPresetPopup("最小位相を記録: 位相=" + _cfgBellyForwardMinPhase.Value.ToString("0.000"), false);
-            }
-        }
-
-        private void SaveBellyProfileFromEditor(bool forcePopup)
-        {
-            if (!TryGetBellyContext(out BellyContext context))
-            {
-                if (forcePopup)
-                    ShowPresetPopup("腹ボコ保存失敗: Hシーン文脈を取得できません", true);
-                return;
-            }
-
-            int slot = Mathf.Clamp(_cfgBellyPresetSlot.Value, 1, 20);
-            float minInflation = Mathf.Clamp(_cfgBellyMinInflationSize.Value, 0f, 40f);
-            float maxInflation = Mathf.Clamp(_cfgBellyMaxInflationSize.Value, 0f, 40f);
-
-            var profile = new BellyBokoProfile
-            {
-                AnimationKey = context.AnimationKey,
-                PostureId = context.PostureId,
-                PostureMode = context.PostureMode,
-                PostureName = context.PostureName,
-                MotionStrength = context.MotionStrength,
-                AnimatorStateHash = context.AnimatorStateHash,
-                Enabled = _cfgBellyProfileEnabled.Value,
-                PresetSlot = slot,
-                ForwardMinPhase = NormalizePhase01(_cfgBellyForwardMinPhase.Value),
-                MinHoldWidth = Mathf.Clamp01(_cfgBellyMinHoldWidth.Value),
-                MaxPhase = NormalizePhase01(_cfgBellyMaxPhase.Value),
-                ReturnMinPhase = NormalizePhase01(_cfgBellyReturnMinPhase.Value),
-                MinInflationSize = minInflation,
-                MaxInflationSize = Mathf.Clamp(maxInflation, 0f, 40f),
-                EaseUp = NormalizeEaseName(_cfgBellyEaseUp.Value, "easeOut"),
-                EaseDown = NormalizeEaseName(_cfgBellyEaseDown.Value, "easeIn"),
-                DistanceMode = _cfgBellyDistanceMode != null && _cfgBellyDistanceMode.Value,
-                DistanceCutPercent = Mathf.Clamp01(_cfgBellyDistanceCutPercent != null ? _cfgBellyDistanceCutPercent.Value : 0.5f),
-                DistanceMinMeters = Mathf.Clamp(_cfgBellyDistanceMinMeters != null ? _cfgBellyDistanceMinMeters.Value : 0.04f, 0f, 2f),
-                DistanceMaxMeters = Mathf.Clamp(_cfgBellyDistanceMaxMeters != null ? _cfgBellyDistanceMaxMeters.Value : 0.24f, 0f, 2f),
-                DistanceSmoothing = Mathf.Clamp01(_cfgBellyDistanceSmoothing != null ? _cfgBellyDistanceSmoothing.Value : 0.35f)
-            };
-
-            _bellyStore.Upsert(profile);
-            _bellyStore.Save();
-            _bellyCurrentAnimationKey = context.AnimationKey;
-
-            if (forcePopup)
-                ShowPresetPopup("腹ボコプロファイル保存: " + context.ShortKeyText, false);
-
-            LogInfo("belly profile saved key=" + context.AnimationKey
-                + " min=" + profile.ForwardMinPhase.ToString("0.000")
-                + " hold=" + profile.MinHoldWidth.ToString("0.000")
-                + " max=" + profile.MaxPhase.ToString("0.000")
-                + " ret=" + profile.ReturnMinPhase.ToString("0.000")
-                + " slot=" + profile.PresetSlot
-                + " size=" + profile.MinInflationSize.ToString("0.###") + "->" + profile.MaxInflationSize.ToString("0.###")
-                + " mode=" + (profile.DistanceMode ? "distance" : "phase")
-                + " distRange=" + profile.DistanceMinMeters.ToString("0.000") + "->" + profile.DistanceMaxMeters.ToString("0.000")
-                + " cut=" + profile.DistanceCutPercent.ToString("0.000"));
-        }
-
-        private void LoadBellyProfileToEditor(bool forcePopup)
-        {
-            if (!TryGetBellyContext(out BellyContext context))
-            {
-                if (forcePopup)
-                    ShowPresetPopup("腹ボコ読込失敗: Hシーン文脈を取得できません", true);
-                return;
-            }
-
-            if (!_bellyStore.TryGet(context.AnimationKey, out BellyBokoProfile profile) || profile == null)
-            {
-                if (forcePopup)
-                    ShowPresetPopup("腹ボコ読込失敗: 現在キーのプロファイルがありません", true);
-                return;
-            }
-
-            _bellyEditorSyncGuard = true;
-            try
-            {
-                _cfgBellyProfileEnabled.Value = profile.Enabled;
-                _cfgBellyPresetSlot.Value = Mathf.Clamp(profile.PresetSlot, 1, 20);
-                _cfgBellyForwardMinPhase.Value = NormalizePhase01(profile.ForwardMinPhase);
-                _cfgBellyMinHoldWidth.Value = Mathf.Clamp01(profile.MinHoldWidth);
-                _cfgBellyMaxPhase.Value = NormalizePhase01(profile.MaxPhase);
-                _cfgBellyReturnMinPhase.Value = NormalizePhase01(profile.ReturnMinPhase);
-                _cfgBellyEaseUp.Value = NormalizeEaseName(profile.EaseUp, "easeOut");
-                _cfgBellyEaseDown.Value = NormalizeEaseName(profile.EaseDown, "easeIn");
-                _cfgBellyMinInflationSize.Value = Mathf.Clamp(profile.MinInflationSize, 0f, 40f);
-                _cfgBellyMaxInflationSize.Value = Mathf.Clamp(profile.MaxInflationSize, 0f, 40f);
-                _cfgBellyDistanceMode.Value = profile.DistanceMode;
-                _cfgBellyDistanceCutPercent.Value = Mathf.Clamp01(profile.DistanceCutPercent);
-                _cfgBellyDistanceMinMeters.Value = Mathf.Clamp(profile.DistanceMinMeters, 0f, 2f);
-                _cfgBellyDistanceMaxMeters.Value = Mathf.Clamp(profile.DistanceMaxMeters, 0f, 2f);
-                _cfgBellyDistanceSmoothing.Value = Mathf.Clamp01(profile.DistanceSmoothing);
-            }
-            finally
-            {
-                _bellyEditorSyncGuard = false;
-            }
-            _hasBellyDistanceSmoothed = false;
-
-            if (forcePopup)
-                ShowPresetPopup("腹ボコプロファイル読込: " + context.ShortKeyText, false);
-
-            LogInfo("belly profile loaded key=" + context.AnimationKey);
         }
 
         private float GetEffectiveInflationSize()
@@ -1153,6 +417,27 @@ namespace MainGamePregnancyPlusBridge
                 return false;
             }
 
+            string clipName = string.Empty;
+            try
+            {
+                if (!_bellyAnimBodyFieldResolved)
+                {
+                    _bellyAnimBodyFieldResolved = true;
+                    _bellyAnimBodyField = typeof(ChaControl).GetField("animBody", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
+                }
+                if (_bellyAnimBodyField != null)
+                {
+                    var animBody = _bellyAnimBodyField.GetValue(female) as Animator;
+                    if (animBody != null)
+                    {
+                        AnimatorClipInfo[] clips = animBody.GetCurrentAnimatorClipInfo(0);
+                        if (clips != null && clips.Length > 0 && clips[0].clip != null)
+                            clipName = clips[0].clip.name;
+                    }
+                }
+            }
+            catch { }
+
             object nowAnimInfo = GetNowAnimationInfoForBelly(_bellyHSceneProc);
             int postureId = GetIntMemberValueByName(nowAnimInfo, "id", int.MinValue);
             int postureMode = GetIntMemberValueByName(nowAnimInfo, "mode", int.MinValue);
@@ -1176,6 +461,7 @@ namespace MainGamePregnancyPlusBridge
                 Distance = distanceMeters,
                 HasDistance = hasDistance,
                 AnimationKey = key,
+                ClipName = clipName,
                 ShortKeyText = shortKey,
                 DisplayText = hasDistance
                     ? shortKey + " hash=" + stateHash + " dist=" + distanceMeters.ToString("0.000")
@@ -1467,18 +753,80 @@ namespace MainGamePregnancyPlusBridge
                 || stateInfo.IsName("orgW");
         }
 
-        
-        private static bool IsCaptureShortcutAssigned(KeyboardShortcut shortcut)
+        private void SaveBellyProfile(BellyContext context)
         {
-            return shortcut.MainKey != KeyCode.None;
+            if (_bellyStore == null)
+                return;
+
+            var profile = new BellyBokoProfile
+            {
+                AnimationKey = context.AnimationKey ?? string.Empty,
+                PostureId = context.PostureId,
+                PostureMode = context.PostureMode,
+                PostureName = context.PostureName ?? string.Empty,
+                MotionStrength = context.MotionStrength ?? string.Empty,
+                DistanceMinMeters = Mathf.Clamp(_cfgBellyDistanceMinMeters.Value, 0f, 2f),
+                DistanceMaxMeters = Mathf.Clamp(_cfgBellyDistanceMaxMeters.Value, 0f, 2f),
+                DistanceCutPercent = Mathf.Clamp01(_cfgBellyDistanceCutPercent.Value),
+                DistanceSmoothing = Mathf.Clamp01(_cfgBellyDistanceSmoothing.Value),
+                EaseUp = NormalizeEaseName(_cfgBellyEaseUp != null ? _cfgBellyEaseUp.Value : "easeOut", "easeOut"),
+                EaseDown = NormalizeEaseName(_cfgBellyEaseDown != null ? _cfgBellyEaseDown.Value : "easeIn", "easeIn"),
+                MinInflationSize = Mathf.Clamp(_cfgBellyMinInflationSize.Value, 0f, 40f),
+                MaxInflationSize = Mathf.Clamp(_cfgBellyMaxInflationSize.Value, 0f, 40f)
+            };
+
+            _bellyStore.Upsert(profile);
+            _bellyStore.Save();
+            LogInfo("belly profile saved key=" + context.AnimationKey);
         }
 
-        private bool ApplyBellyFlat(BellyContext context, string gate)
+        private void LoadBellyProfile(BellyContext context)
         {
-            _runtimeInflationSizeOverride = 0f;
-            _hasRuntimeInflationSizeOverride = true;
-            LogBellyGate(gate, context);
-            return true;
+            if (_bellyStore == null)
+                return;
+
+            if (!_bellyStore.TryGet(context.AnimationKey, out BellyBokoProfile profile) || profile == null)
+            {
+                LogInfo("belly profile not found key=" + context.AnimationKey);
+                return;
+            }
+
+            _cfgBellyDistanceMinMeters.Value = Mathf.Clamp(profile.DistanceMinMeters, 0f, 2f);
+            _cfgBellyDistanceMaxMeters.Value = Mathf.Clamp(profile.DistanceMaxMeters, 0f, 2f);
+            _cfgBellyDistanceCutPercent.Value = Mathf.Clamp01(profile.DistanceCutPercent);
+            _cfgBellyDistanceSmoothing.Value = Mathf.Clamp01(profile.DistanceSmoothing);
+            if (_cfgBellyEaseUp != null)
+                _cfgBellyEaseUp.Value = NormalizeEaseName(profile.EaseUp, "easeOut");
+            if (_cfgBellyEaseDown != null)
+                _cfgBellyEaseDown.Value = NormalizeEaseName(profile.EaseDown, "easeIn");
+            _cfgBellyMinInflationSize.Value = Mathf.Clamp(profile.MinInflationSize, 0f, 40f);
+            _cfgBellyMaxInflationSize.Value = Mathf.Clamp(profile.MaxInflationSize, 0f, 40f);
+            _hasBellyDistanceSmoothed = false;
+
+            LogInfo("belly profile loaded key=" + context.AnimationKey);
+            ShowPresetPopup("腹ボコプロファイル読込: " + context.ShortKeyText, false);
+        }
+
+        private void LoadBellyFallbackProfile(BellyContext context)
+        {
+            _bellyFallbackProfile = null;
+            if (_bellyStore == null)
+                return;
+
+            if (_bellyStore.TryGetByMotionStrength(context.PostureId, context.PostureMode, context.PostureName, MotionStrengthStrong, out BellyBokoProfile p))
+            {
+                _bellyFallbackProfile = p;
+                LogInfo("belly fallback profile loaded from strong key=" + (p != null ? p.AnimationKey : "?"));
+            }
+            else
+            {
+                LogInfo("belly fallback profile not found (no strong piston profile for posture id=" + context.PostureId + " mode=" + context.PostureMode + ")");
+            }
+        }
+
+        private static bool IsIdleClip(string clipName)
+        {
+            return string.Equals(clipName ?? string.Empty, "S_Idle", StringComparison.Ordinal);
         }
 
         private void LogBellyGate(string gate)
@@ -1503,7 +851,7 @@ namespace MainGamePregnancyPlusBridge
                 + " hash=" + context.AnimatorStateHash);
         }
 
-        private void LogBellyApplySample(BellyContext context, BellyBokoProfile profile, float weight, float targetSize)
+        private void LogBellyApplySample(BellyContext context, float weight, float targetSize, float minSize, float maxSize, float distMin, float distMax, string easeDown)
         {
             if (!_cfgVerboseLog.Value)
                 return;
@@ -1514,15 +862,13 @@ namespace MainGamePregnancyPlusBridge
 
             LogVerbose("belly runtime apply"
                 + " key=" + context.ShortKeyText
-                + " phase=" + context.Phase.ToString("0.000")
-                + " minPhase=" + profile.ForwardMinPhase.ToString("0.000")
-                + " minHold=" + profile.MinHoldWidth.ToString("0.000")
-                + " maxPhase=" + profile.MaxPhase.ToString("0.000")
-                + " retPhase=" + profile.ReturnMinPhase.ToString("0.000")
                 + " dist=" + (context.HasDistance ? context.Distance.ToString("0.000") : "(none)")
+                + " smoothed=" + _bellyDistanceSmoothed.ToString("0.000")
+                + " distRange=" + distMin.ToString("0.000") + "->" + distMax.ToString("0.000")
+                + " ease=" + easeDown
                 + " weight=" + weight.ToString("0.000")
-                + " minSize=" + profile.MinInflationSize.ToString("0.###")
-                + " maxSize=" + profile.MaxInflationSize.ToString("0.###")
+                + " minSize=" + minSize.ToString("0.###")
+                + " maxSize=" + maxSize.ToString("0.###")
                 + " target=" + targetSize.ToString("0.###"));
         }
 
@@ -1586,6 +932,8 @@ namespace MainGamePregnancyPlusBridge
             _cfgBellyDistanceMinMeters.Value = learnedMin;
             _cfgBellyDistanceMaxMeters.Value = learnedMax;
 
+            SaveBellyProfile(context);
+
             ShowPresetPopup(
                 "距離分析完了: min=" + learnedMin.ToString("0.000")
                 + " max=" + learnedMax.ToString("0.000")
@@ -1597,44 +945,6 @@ namespace MainGamePregnancyPlusBridge
                 + " min=" + learnedMin.ToString("0.000")
                 + " max=" + learnedMax.ToString("0.000")
                 + " raw=" + rawDistance.ToString("0.000"));
-
-            bool editModeApply = _cfgBellyEditMode == null || _cfgBellyEditMode.Value;
-            if (editModeApply)
-                SaveBellyProfileFromEditor(forcePopup: false);
-        }
-
-        private static float EvaluateBellyWeight(float phase, float forwardMin, float minHoldWidth, float max, float returnMin, string easeUp, string easeDown)
-        {
-            phase = NormalizePhase01(phase);
-            forwardMin = NormalizePhase01(forwardMin);
-            minHoldWidth = Mathf.Clamp01(minHoldWidth);
-            max = NormalizePhase01(max);
-            returnMin = NormalizePhase01(returnMin);
-
-            float upDistance = PhaseDistanceForward(forwardMin, max);
-            float clampedHold = Mathf.Clamp(minHoldWidth, 0f, Mathf.Max(0f, upDistance - 0.0001f));
-            float riseStart = NormalizePhase01(forwardMin + clampedHold);
-
-            bool onMinHold = IsPhaseWithinForward(phase, forwardMin, riseStart);
-            if (onMinHold)
-                return 0f;
-
-            // At exact max phase, prefer the down-branch so weight=1 starts from the peak.
-            bool onDown = IsPhaseWithinForward(phase, max, returnMin);
-            if (onDown)
-            {
-                float t = InverseLerpPhaseForward(max, returnMin, phase);
-                return 1f - EaseByName(t, easeDown);
-            }
-
-            bool onUp = IsPhaseWithinForward(phase, riseStart, max);
-            if (onUp)
-            {
-                float t = InverseLerpPhaseForward(riseStart, max, phase);
-                return EaseByName(t, easeUp);
-            }
-
-            return 0f;
         }
 
         private static string NormalizeEaseName(string easing, string fallback)
@@ -1673,30 +983,6 @@ namespace MainGamePregnancyPlusBridge
             return Mathf.Repeat(v, 1f);
         }
 
-        private static float PhaseDistanceForward(float from, float to)
-        {
-            float d = NormalizePhase01(to) - NormalizePhase01(from);
-            if (d < 0f)
-                d += 1f;
-            return d;
-        }
-
-        private static bool IsPhaseWithinForward(float phase, float from, float to)
-        {
-            float len = PhaseDistanceForward(from, to);
-            float pos = PhaseDistanceForward(from, phase);
-            return pos <= len;
-        }
-
-        private static float InverseLerpPhaseForward(float from, float to, float phase)
-        {
-            float len = PhaseDistanceForward(from, to);
-            if (len <= 1e-6f)
-                return 0f;
-            float pos = PhaseDistanceForward(from, phase);
-            return Mathf.Clamp01(pos / len);
-        }
-
         private struct BellyContext
         {
             public int PostureId;
@@ -1708,6 +994,7 @@ namespace MainGamePregnancyPlusBridge
             public float Distance;
             public bool HasDistance;
             public string AnimationKey;
+            public string ClipName;
             public string ShortKeyText;
             public string DisplayText;
         }
