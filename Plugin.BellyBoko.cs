@@ -30,8 +30,6 @@ namespace MainGamePregnancyPlusBridge
 
         private BellyBokoStore _bellyStore;
         private BellyBokoProfile _bellyFallbackProfile;
-        private FieldInfo _bellyAnimBodyField;
-        private bool _bellyAnimBodyFieldResolved;
 
         private bool _hasRuntimeInflationSizeOverride;
         private float _runtimeInflationSizeOverride;
@@ -420,20 +418,12 @@ namespace MainGamePregnancyPlusBridge
             string clipName = string.Empty;
             try
             {
-                if (!_bellyAnimBodyFieldResolved)
+                Animator animBody = female.animBody;
+                if (animBody != null)
                 {
-                    _bellyAnimBodyFieldResolved = true;
-                    _bellyAnimBodyField = typeof(ChaControl).GetField("animBody", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
-                }
-                if (_bellyAnimBodyField != null)
-                {
-                    var animBody = _bellyAnimBodyField.GetValue(female) as Animator;
-                    if (animBody != null)
-                    {
-                        AnimatorClipInfo[] clips = animBody.GetCurrentAnimatorClipInfo(0);
-                        if (clips != null && clips.Length > 0 && clips[0].clip != null)
-                            clipName = clips[0].clip.name;
-                    }
+                    AnimatorClipInfo[] clips = animBody.GetCurrentAnimatorClipInfo(0);
+                    if (clips != null && clips.Length > 0 && clips[0].clip != null)
+                        clipName = clips[0].clip.name;
                 }
             }
             catch { }
@@ -443,7 +433,7 @@ namespace MainGamePregnancyPlusBridge
             int postureMode = GetIntMemberValueByName(nowAnimInfo, "mode", int.MinValue);
             string postureName = GetStringMemberValueByName(nowAnimInfo, "nameAnimation");
 
-            string motionStrength = ClassifyMotionStrength(stateInfo);
+            string motionStrength = ClassifyMotionStrength(clipName);
             int stateHash = stateInfo.fullPathHash;
             float phase = NormalizePhase01(stateInfo.normalizedTime);
             bool hasDistance = TryGetBellyDistance(_bellyHSceneProc, female, out float distanceMeters);
@@ -718,11 +708,11 @@ namespace MainGamePregnancyPlusBridge
             return "id=" + postureId + " mode=" + postureMode + " name=" + (postureName ?? string.Empty) + " strength=" + motionStrength;
         }
 
-        private static string ClassifyMotionStrength(AnimatorStateInfo stateInfo)
+        private static string ClassifyMotionStrength(string clipName)
         {
-            if (IsStrongMotionState(stateInfo))
+            if (IsStrongPistonClip(clipName))
                 return MotionStrengthStrong;
-            if (IsWeakMotionState(stateInfo))
+            if (IsWeakPistonClip(clipName))
                 return MotionStrengthWeak;
             return MotionStrengthUnknown;
         }
@@ -733,24 +723,14 @@ namespace MainGamePregnancyPlusBridge
                 || string.Equals(strength ?? string.Empty, MotionStrengthWeak, StringComparison.Ordinal);
         }
 
-        private static bool IsStrongMotionState(AnimatorStateInfo stateInfo)
+        private static bool IsStrongPistonClip(string clipName)
         {
-            return stateInfo.IsName("SLoop")
-                || stateInfo.IsName("A_SLoop")
-                || stateInfo.IsName("SS_IN_Loop")
-                || stateInfo.IsName("SF_IN_Loop")
-                || stateInfo.IsName("sameS")
-                || stateInfo.IsName("orgS");
+            return (clipName ?? string.Empty).IndexOf("SLoop", StringComparison.OrdinalIgnoreCase) >= 0;
         }
 
-        private static bool IsWeakMotionState(AnimatorStateInfo stateInfo)
+        private static bool IsWeakPistonClip(string clipName)
         {
-            return stateInfo.IsName("WLoop")
-                || stateInfo.IsName("A_WLoop")
-                || stateInfo.IsName("WS_IN_Loop")
-                || stateInfo.IsName("WF_IN_Loop")
-                || stateInfo.IsName("sameW")
-                || stateInfo.IsName("orgW");
+            return (clipName ?? string.Empty).IndexOf("WLoop", StringComparison.OrdinalIgnoreCase) >= 0;
         }
 
         private void SaveBellyProfile(BellyContext context)
@@ -826,7 +806,7 @@ namespace MainGamePregnancyPlusBridge
 
         private static bool IsIdleClip(string clipName)
         {
-            return string.Equals(clipName ?? string.Empty, "S_Idle", StringComparison.Ordinal);
+            return (clipName ?? string.Empty).IndexOf("Idle", StringComparison.OrdinalIgnoreCase) >= 0;
         }
 
         private void LogBellyGate(string gate)

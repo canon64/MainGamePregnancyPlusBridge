@@ -18,7 +18,7 @@ namespace MainGamePregnancyPlusBridge
     {
         public const string GUID = "com.kks.main.pregnancyplusbridge";
         public const string PluginName = "MainGamePregnancyPlusBridge";
-        public const string Version = "0.2.0";
+        public const string Version = "0.3.0";
 
         private const string RelayOwner = GUID;
         private const string RelayLogKey = "main/" + PluginName;
