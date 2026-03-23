@@ -13,7 +13,6 @@ namespace MainGamePregnancyPlusBridge
         private const string MotionStrengthUnknown = "unknown";
 
         private ConfigEntry<bool> _cfgBellyEnabled;
-        private ConfigEntry<int> _cfgBellyPresetSlot;
         private ConfigEntry<float> _cfgBellyMinInflationSize;
         private ConfigEntry<float> _cfgBellyMaxInflationSize;
         private ConfigEntry<float> _cfgBellyDistanceCutPercent;
@@ -84,11 +83,6 @@ namespace MainGamePregnancyPlusBridge
                 "Enabled",
                 true,
                 new ConfigDescription("腹ボコ機能の有効/無効", null, BellyUiOrder(999)));
-            _cfgBellyPresetSlot = Config.Bind(
-                "10.BellyBoko",
-                "PresetSlotForMax",
-                1,
-                new ConfigDescription("最大InflationSizeの取得元プリセットスロット", new AcceptableValueRange<int>(1, 20), BellyUiOrder(985)));
             _cfgBellyMinInflationSize = Config.Bind(
                 "10.BellyBoko",
                 "MinInflationSize",
@@ -178,7 +172,6 @@ namespace MainGamePregnancyPlusBridge
             _cfgBellyDistanceSmoothing.SettingChanged += OnBellyEditorValueChanged;
             _cfgBellyDistanceAnalyzeTurns.SettingChanged += OnBellyEditorValueChanged;
 
-            _cfgBellyPresetSlot.Value = Mathf.Clamp(_cfgBellyPresetSlot.Value, 1, 20);
             _cfgBellyMinInflationSize.Value = Mathf.Clamp(_cfgBellyMinInflationSize.Value, 0f, 40f);
             _cfgBellyMaxInflationSize.Value = Mathf.Clamp(_cfgBellyMaxInflationSize.Value, 0f, 40f);
             _cfgBellyDistanceCutPercent.Value = Mathf.Clamp01(_cfgBellyDistanceCutPercent.Value);
